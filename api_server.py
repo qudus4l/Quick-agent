@@ -198,6 +198,63 @@ def get_dashboard_data():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/config/phones', methods=['GET'])
+def get_phone_numbers():
+    """Get Twilio and test client phone numbers from environment variables."""
+    try:
+        twilio_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
+        test_client_phone = os.getenv("TEST_CLIENT_PHONE", "")
+        
+        return jsonify({
+            "twilioPhone": twilio_phone,
+            "testClientPhone": test_client_phone
+        })
+    except Exception as e:
+        print(f"Error in get_phone_numbers: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/call/test-client', methods=['POST'])
+def call_test_client():
+    """Initiate a call from Twilio to the test client phone number."""
+    try:
+        test_client_phone = os.getenv("TEST_CLIENT_PHONE", "")
+        twilio_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
+        
+        if not test_client_phone or not twilio_phone:
+            return jsonify({
+                "success": False, 
+                "message": "Missing phone numbers in environment variables"
+            }), 400
+            
+        # Create a TwiML response for when the call is answered
+        callback_url = f"{os.getenv('PUBLIC_URL', '')}/voice"
+        
+        try:
+            # Initiate the call using Twilio
+            call = twilio_client.calls.create(
+                to=test_client_phone,
+                from_=twilio_phone,
+                url=callback_url,
+                method="POST"
+            )
+            
+            return jsonify({
+                "success": True,
+                "message": "Call initiated to test client",
+                "call_sid": call.sid
+            })
+        except Exception as call_err:
+            print(f"Error initiating call: {call_err}")
+            return jsonify({
+                "success": False,
+                "message": f"Failed to initiate call: {str(call_err)}"
+            }), 500
+    except Exception as e:
+        print(f"Error in call_test_client: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 # Serve React frontend in production
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

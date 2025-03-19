@@ -1,6 +1,6 @@
 {
-  "short_name": "QuickAgent",
-  "name": "QuickAgent Dashboard",
+  "short_name": "Agent",
+  "name": "Agent Dashboard",
   "icons": [
     {
       "src": "favicon.ico",

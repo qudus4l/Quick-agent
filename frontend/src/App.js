@@ -9,6 +9,7 @@ import Dashboard from './components/Dashboard';
 import AppointmentList from './components/AppointmentList';
 import AppointmentDetail from './components/AppointmentDetail';
 import CallHistory from './components/CallHistory';
+import TestPage from './components/TestPage';
 
 // Create a theme
 const theme = createTheme({
@@ -74,6 +75,7 @@ function App() {
           <Route path="appointments" element={<AppointmentList />} />
           <Route path="appointments/:id" element={<AppointmentDetail />} />
           <Route path="calls" element={<CallHistory />} />
+          <Route path="test" element={<TestPage />} />
         </Route>
       </Routes>
     </ThemeProvider>

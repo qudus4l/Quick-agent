@@ -22,6 +22,7 @@ import {
   EventNote as AppointmentIcon,
   Phone as PhoneIcon,
   ChevronLeft as ChevronLeftIcon,
+  BugReport as TestIcon,
 } from '@mui/icons-material';
 
 const drawerWidth = 240;
@@ -30,6 +31,7 @@ const menuItems = [
   { name: 'Dashboard', path: '/', icon: <DashboardIcon /> },
   { name: 'Appointments', path: '/appointments', icon: <AppointmentIcon /> },
   { name: 'Call History', path: '/calls', icon: <PhoneIcon /> },
+  { name: 'Test', path: '/test', icon: <TestIcon /> },
 ];
 
 function Layout() {
@@ -72,7 +74,7 @@ function Layout() {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            QuickAgent Dashboard
+            Agent Dashboard
           </Typography>
         </Toolbar>
       </AppBar>
