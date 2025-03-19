@@ -28,7 +28,7 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='frontend/build')
-CORS(app)  # Enable CORS for all routes
+CORS(app, resources={r"/api/*": {"origins": "*"}})  # Enable CORS for API routes
 
 # Initialize appointment database
 appointment_db = AppointmentDatabase()
