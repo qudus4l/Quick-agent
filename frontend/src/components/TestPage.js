@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { Phone as PhoneIcon, PhoneCallback as PhoneCallbackIcon } from '@mui/icons-material';
 import axios from 'axios';
+import config from '../config';
 
 function TestPage() {
   const [twilioPhone, setTwilioPhone] = useState('');
@@ -28,7 +29,7 @@ function TestPage() {
     const fetchPhoneNumbers = async () => {
       try {
         setLoading(true);
-        const response = await axios.get('http://localhost:5001/api/config/phones');
+        const response = await axios.get(`${config.apiBaseUrl}${config.endpoints.phoneNumbers}`);
         
         if (response.data && response.data.twilioPhone) {
           setTwilioPhone(response.data.twilioPhone);
@@ -67,7 +68,7 @@ function TestPage() {
     
     try {
       setCallingClient(true);
-      const response = await axios.post('http://localhost:5001/api/call/test-client');
+      const response = await axios.post(`${config.apiBaseUrl}${config.endpoints.callTestClient}`);
       
       if (response.data && response.data.success) {
         setSnackbarMessage(`Agent is calling the test client: ${testClientPhone}`);
