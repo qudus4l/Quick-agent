@@ -28,16 +28,7 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='frontend/build')
-
-# Improved CORS configuration for different environments
-if os.getenv("ENVIRONMENT") == "production":
-    # In production, we'll use the SERVER_NAME environment variable if set
-    # Otherwise, allow requests from any origin (less secure but more flexible)
-    allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
-    CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
-else:
-    # In development, only allow requests from localhost
-    CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+CORS(app, resources={r"/api/*": {"origins": "*"}})  # Enable CORS for API routes
 
 # Initialize appointment database
 appointment_db = AppointmentDatabase()
@@ -264,25 +255,18 @@ def call_test_client():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# Improved static file serving for production
+# Serve React frontend in production
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
     try:
-        # Check if we're looking for an API endpoint
-        if path.startswith('api/'):
-            return {"error": "Not found"}, 404
-            
-        # First, try to serve the exact file
-        if path and os.path.exists(os.path.join(app.static_folder, path)):
+        if path != "" and os.path.exists(app.static_folder + '/' + path):
             return send_from_directory(app.static_folder, path)
-            
-        # For any other request, serve index.html (for React Router)
-        return send_from_directory(app.static_folder, 'index.html')
+        else:
+            return send_from_directory(app.static_folder, 'index.html')
     except Exception as e:
         print(f"Error serving static files: {e}")
-        traceback.print_exc()
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return f"Server error: {str(e)}", 500
 
 # Add routes for favicon and logo
 @app.route('/favicon.ico')

@@ -1,9 +1,9 @@
 import axios from 'axios';
-import config from '../config';
 
-// Use the API base URL from our config
+const API_URL = process.env.REACT_APP_API_URL || `${window.location.protocol}//${window.location.hostname}:5001/api`;
+
 const apiClient = axios.create({
-  baseURL: `${config.apiBaseUrl}/api`,
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,41 +11,40 @@ const apiClient = axios.create({
 
 // API functions for appointments
 export const getAppointments = async (filters = {}) => {
-  const response = await apiClient.get(config.endpoints.appointments, { params: filters });
+  const response = await apiClient.get('/appointments', { params: filters });
   return response.data;
 };
 
 export const getAppointmentById = async (id) => {
-  const response = await apiClient.get(`${config.endpoints.appointments}?id=${id}`);
+  const response = await apiClient.get(`/appointments?id=${id}`);
   return response.data;
 };
 
 export const triggerAppointmentCall = async (appointmentId) => {
-  const response = await apiClient.post(`${config.endpoints.appointments}/${appointmentId}/call`);
+  const response = await apiClient.post(`/appointments/${appointmentId}/call`);
   return response.data;
 };
 
 // API functions for calls
 export const getRecentCalls = async () => {
-  const response = await apiClient.get(config.endpoints.calls);
+  const response = await apiClient.get('/calls/recent');
   return response.data;
 };
 
 // Dashboard data
 export const getDashboardData = async () => {
-  const response = await apiClient.get(config.endpoints.dashboardData);
+  const response = await apiClient.get('/dashboard-data');
   return response.data;
 };
 
-// Phone number data
+// Test page API functions
 export const getPhoneNumbers = async () => {
-  const response = await apiClient.get(config.endpoints.phoneNumbers);
+  const response = await apiClient.get('/config/phones');
   return response.data;
 };
 
-// Call test client
 export const callTestClient = async () => {
-  const response = await apiClient.post(config.endpoints.callTestClient);
+  const response = await apiClient.post('/call/test-client');
   return response.data;
 };
 

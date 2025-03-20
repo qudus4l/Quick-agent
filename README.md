@@ -1,43 +1,63 @@
-# QuickAgent - AI Appointment Management System
+# QuickAgent Dashboard
 
-QuickAgent is an innovative appointment management system that combines a conversational AI assistant with automated appointment scheduling and reminders. The system allows clients to book appointments through phone calls while providing businesses with a comprehensive dashboard to manage appointments and call history.
+A modern web dashboard for the QuickAgent appointment management system. This application allows you to manage appointments, trigger reminder calls, and view call history in a clean, minimalistic interface.
 
 ## Features
 
-- **Conversational AI Assistant**: Handles incoming calls to schedule appointments
-- **Automated Reminders**: Calls clients before their appointments
-- **Dashboard Interface**: Manage appointments and call history
-- **Test Tools**: Test the system functionality
+- **Real-time Dashboard**: View key metrics and upcoming appointments
+- **Appointment Management**: List, search, and view detailed appointment information
+- **Call Management**: Trigger outbound reminder calls directly from the interface
+- **Call History**: View detailed history of all inbound and outbound calls
 
-## System Requirements
+## Tech Stack
 
-- Python 3.7+
+### Backend
+- Flask REST API
+- SQLite database
+- Twilio integration for calls and SMS
+
+### Frontend
+- React
+- Material-UI for the component library
+- Axios for API requests
+- React Router for navigation
+
+## Prerequisites
+
+- Python 3.8+
 - Node.js 14+
-- NPM 6+
-- Twilio Account (for phone functionality)
+- npm or yarn
+- Twilio account with a phone number
+- ngrok for testing (optional)
 
-## Installation
+## Environment Variables
+
+Create a `.env` file in the root directory with the following variables:
+
+```
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_PHONE_NUMBER=your_twilio_phone_number
+OPENAI_API_KEY=your_openai_api_key
+DEEPGRAM_API_KEY=your_deepgram_api_key
+PUBLIC_URL=your_public_url_for_webhooks (e.g., your ngrok URL)
+```
+
+## Installation and Setup
 
 ### Backend Setup
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/quickagent.git
-   cd quickagent
-   ```
-
-2. Install Python dependencies:
+1. Install Python dependencies:
    ```
    pip install -r requirements.txt
    ```
 
-3. Create a `.env` file in the root directory with your Twilio credentials:
+2. Run the API server:
    ```
-   TWILIO_ACCOUNT_SID=your_twilio_sid
-   TWILIO_AUTH_TOKEN=your_twilio_auth_token
-   TWILIO_PHONE_NUMBER=your_twilio_phone_number
-   TEST_CLIENT_PHONE=your_test_client_phone
+   python api_server.py
    ```
+
+3. The API server will start on http://localhost:5001
 
 ### Frontend Setup
 
@@ -46,139 +66,59 @@ QuickAgent is an innovative appointment management system that combines a conver
    cd frontend
    ```
 
-2. Install dependencies:
+2. Install the dependencies:
    ```
    npm install
    ```
 
-3. Build the frontend:
+3. Start the development server:
    ```
-   npm run build
+   npm start
    ```
 
-## Running the Application
+4. The React app will start on http://localhost:3000
 
-### Start the API Server
+## Testing the Twilio Integration
 
-```
-python api_server.py
-```
+1. Run the Twilio handler:
+   ```
+   python twilio_handler.py
+   ```
 
-The API server will start on http://localhost:5001.
-
-### Start the React Development Server (for development)
-
-```
-cd frontend
-npm start
-```
-
-The frontend development server will start on http://localhost:3000.
-
-### Setting up Twilio for Inbound Calls
-
-1. Start a tunnel to your local server using ngrok:
+2. Use ngrok to expose your local server:
    ```
    ngrok http 5000
    ```
 
-2. Configure your Twilio phone number to use the ngrok URL for Voice Webhook:
-   - Go to the Twilio Console > Phone Numbers > Manage > Active Numbers
-   - Select your number
-   - Under "Voice & Fax" > "A Call Comes In", set the webhook to:
-     ```
-     [your-ngrok-url]/voice
-     ```
+3. Update your Twilio phone number's webhook URL with the ngrok URL.
 
-## Running the Appointment Reminder System
+4. Start the appointment reminder scheduler:
+   ```
+   python appointment_reminder.py schedule
+   ```
 
-To schedule automated reminders:
+## Building for Production
 
-```
-python appointment_reminder.py schedule
-```
-
-This will check for upcoming appointments every 15 minutes and send reminder calls 1 day before and 30 minutes before each appointment.
-
-## Deployment
-
-### Local Deployment
-
-1. Build the frontend:
+1. Build the React app:
    ```
    cd frontend
    npm run build
    ```
 
-2. Start the API server:
+2. The build files will be placed in the `frontend/build` directory, which is served by the Flask app.
+
+3. Run the API server in production mode:
    ```
    python api_server.py
    ```
 
-3. Access the application at http://localhost:5001
+## Running Everything at Once
 
-### AWS Deployment
+For convenience, you can run all the services at once using separate terminal windows:
 
-A deployment script is included to help deploy to AWS:
+1. Twilio handler: `python twilio_handler.py`
+2. API server: `python api_server.py`
+3. Appointment reminder: `python appointment_reminder.py schedule`
 
-1. Make the script executable:
-   ```
-   chmod +x deploy_aws.sh
-   ```
-
-2. Run the deployment script:
-   ```
-   ./deploy_aws.sh path/to/your-aws-key.pem ec2-user@your-instance-ip
-   ```
-
-3. Follow the instructions in the DEPLOY_INSTRUCTIONS.md file created on your AWS instance.
-
-## Project Structure
-
-- `api_server.py` - Main API server handling frontend requests
-- `twilio_handler.py` - Twilio webhook handlers
-- `QuickAgent.py` - Conversational AI implementation
-- `appointment_manager.py` - Appointment database operations
-- `appointment_reminder.py` - Automated reminder system
-- `frontend/` - React frontend application
-
-## Testing
-
-### Test the Conversational AI
-
-1. Call your Twilio phone number
-2. Speak with the assistant to book an appointment
-
-### Test Automated Reminders
-
-1. Add a test appointment that's coming up soon
-2. Run the reminder system in manual mode:
-   ```
-   python appointment_reminder.py
-   ```
-
-### Test via the Dashboard
-
-1. Go to the Test page in the dashboard
-2. Use the "Call Agent" button to call the Twilio number
-3. Use the "Have Agent Call Client" button to test outbound calls
-
-## Troubleshooting
-
-### API Connection Issues
-
-If your frontend can't connect to the API:
-
-1. Check that the API server is running
-2. Verify the API URL configuration in `frontend/src/config.js`
-3. Check for CORS issues in browser developer tools
-
-### Twilio Call Issues
-
-1. Verify your Twilio credentials in the `.env` file
-2. Check if your ngrok tunnel is running and the URL is correctly configured in Twilio
-3. Verify that the webhook route is correctly set up
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+```
+python3 QuickAgent.py
