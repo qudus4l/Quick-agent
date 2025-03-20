@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse, Gather
 import base64
+import traceback
 
 # Import from QuickAgent
 from QuickAgent import AppointmentDatabase, LanguageModelProcessor
@@ -103,7 +104,7 @@ def should_send_reminder(appointment_datetime):
     1. It's about 36 hours before the appointment (with a 15-minute window)
     2. It's about 30 minutes before the appointment (with a 5-minute window)
     """
-    now = datetime.now()
+    now = datetime.datetime.now()
     
     # Calculate time until appointment
     time_until_appointment = appointment_datetime - now
@@ -126,6 +127,46 @@ def should_send_reminder(appointment_datetime):
     else:
         return False  # Not time for a reminder yet
 
+def get_appointment(appointment_id):
+    """
+    Get appointment details by ID from the database
+    """
+    try:
+        return appointment_db.get_appointment_by_id(appointment_id)
+    except Exception as e:
+        print(f"Error getting appointment {appointment_id}: {e}")
+        return None
+
+def format_appointment_time(appointment_time):
+    """
+    Format appointment time for display in reminder calls
+    """
+    try:
+        if isinstance(appointment_time, str):
+            return appointment_time
+        elif isinstance(appointment_time, datetime.datetime):
+            # Format datetime as "Weekday at time" (e.g., "Tuesday at 10:00")
+            weekday = appointment_time.strftime("%A")
+            time_str = appointment_time.strftime("%H:%M")
+            return f"{weekday} at {time_str}"
+        else:
+            return str(appointment_time)
+    except Exception as e:
+        print(f"Error formatting appointment time: {e}")
+        return str(appointment_time)
+
+def update_appointment_reminder_status(appointment_id, reminder_type, status):
+    """
+    Update the appointment record with reminder status
+    """
+    try:
+        # In a real application, you'd update a database field
+        print(f"Updated appointment {appointment_id} reminder status: {reminder_type} -> {status}")
+        return True
+    except Exception as e:
+        print(f"Error updating appointment reminder status: {e}")
+        return False
+
 def make_reminder_call(appointment_id, reminder_type):
     """
     Make a phone call to remind a client about their upcoming appointment
@@ -138,13 +179,14 @@ def make_reminder_call(appointment_id, reminder_type):
             return False
         
         # Extract appointment details
-        client_name = appointment.get('client_name', 'valued client')
-        appointment_time = format_appointment_time(appointment['appointment_datetime'])
+        client_name = appointment.get('name', 'valued client')
+        appointment_time = appointment.get('appointment_time', 'your upcoming appointment')
         
         # Get client phone number, or use test number if none is available
         client_phone = appointment.get('phone_number')
         if not client_phone:
-            client_phone = os.getenv("TEST_PHONE_NUMBER", "+15551234567")
+            client_phone = os.getenv("TEST_CLIENT_PHONE", "+15551234567")
+            print(f"No phone number found for appointment, using test number: {client_phone}")
         
         # Create a context object for the conversational assistant
         context = {
@@ -159,15 +201,42 @@ def make_reminder_call(appointment_id, reminder_type):
         context_json = json.dumps(context)
         context_encoded = base64.urlsafe_b64encode(context_json.encode()).decode()
         
+        # Get the server base URL from environment variables, with fallback to localhost
+        server_base_url = os.getenv('SERVER_BASE_URL')
+        if not server_base_url:
+            # For development, try to use PUBLIC_URL if set
+            server_base_url = os.getenv('PUBLIC_URL')
+            
+        # Fall back to localhost if no URL is configured
+        if not server_base_url:
+            server_base_url = "http://localhost:5000"
+            print(f"Warning: SERVER_BASE_URL not set in environment. Using {server_base_url}")
+            print("For production, set SERVER_BASE_URL to your public-facing URL (e.g., ngrok URL)")
+            
         # Generate callback URL with context
-        callback_url = f"{os.getenv('SERVER_BASE_URL', 'http://localhost:5000')}/voice?reminder_context={context_encoded}"
+        callback_url = f"{server_base_url}/voice?reminder_context={context_encoded}"
+        print(f"Using callback URL: {callback_url}")
         
         # Make the call using Twilio
         try:
-            from twilio_config import twilio_client
+            # Use the globally initialized Twilio client
+            global twilio_client
+            
+            # Check if Twilio client is available
+            if not twilio_client:
+                print("Twilio client not initialized. Check your credentials.")
+                return False
+                
+            # Get the Twilio phone number
+            twilio_phone = os.getenv("TWILIO_PHONE_NUMBER")
+            if not twilio_phone:
+                print("TWILIO_PHONE_NUMBER not set in environment")
+                return False
+                
+            # Make the call
             call = twilio_client.calls.create(
                 to=client_phone,
-                from_=os.getenv("TWILIO_PHONE_NUMBER"),
+                from_=twilio_phone,
                 url=callback_url,
                 method="POST"
             )
@@ -178,10 +247,13 @@ def make_reminder_call(appointment_id, reminder_type):
             return True
         except Exception as e:
             print(f"Error making Twilio call: {e}")
+            print(f"Twilio call parameters: to={client_phone}, from={os.getenv('TWILIO_PHONE_NUMBER')}")
+            print(f"Callback URL: {callback_url}")
             return False
             
     except Exception as e:
         print(f"Error in make_reminder_call: {e}")
+        traceback.print_exc()
         return False
 
 def check_upcoming_appointments():
@@ -189,10 +261,23 @@ def check_upcoming_appointments():
     print("Checking for upcoming appointments...")
     appointments = appointment_db.get_all_appointments()
     
+    if not appointments:
+        print("No appointments found.")
+        return 0
+    
     reminders_sent = 0
     for appointment in appointments:
-        should_remind = should_send_reminder(appointment['appointment_datetime'])
+        # Parse the appointment time into a datetime object
+        appointment_datetime, _ = parse_appointment_time(appointment['appointment_time'])
+        
+        if not appointment_datetime:
+            print(f"Could not parse appointment time: {appointment['appointment_time']}")
+            continue
+        
+        # Check if a reminder should be sent
+        should_remind = should_send_reminder(appointment_datetime)
         if should_remind:
+            print(f"Sending {should_remind} reminder for appointment {appointment['id']}")
             success = make_reminder_call(appointment['id'], should_remind)
             if success:
                 reminders_sent += 1
@@ -216,15 +301,14 @@ def remind_specific_appointment(appointment_id):
     
     try:
         # Get the appointment from the database
-        db = AppointmentDatabase()
-        appointment = db.get_appointment_by_id(appointment_id)
+        appointment = get_appointment(appointment_id)
         
         if not appointment:
             print(f"Appointment with ID {appointment_id} not found")
             return False
         
-        # Make the reminder call
-        success = make_reminder_call(appointment['id'], should_send_reminder(appointment['appointment_datetime']))
+        # Make the reminder call with "general" reminder type since it's manually triggered
+        success = make_reminder_call(appointment_id, "general")
         
         return success
     except Exception as e:

@@ -58,227 +58,296 @@ def voice_webhook():
     This function checks if there's a reminder_context parameter, which indicates
     it's an outbound reminder call. Otherwise, it handles regular inbound calls.
     """
-    # Get caller's phone number and call ID
-    caller = request.form.get('From', '')
-    call_id = request.form.get('CallSid', '')
-
-    # Check if this is a reminder call by detecting reminder_context parameter
-    reminder_context = request.args.get('reminder_context', None)
+    try:
+        # Get caller's phone number and call ID
+        caller = request.values.get('From', '')
+        call_id = request.values.get('CallSid', '')
     
-    # Initialize TwiML response and conversation state
-    response = VoiceResponse()
-    conversation_state = {}
-    
-    # If it's a reminder call, decode the reminder context and use it
-    if reminder_context:
-        try:
-            # Decode base64 context
-            decoded_context = base64.urlsafe_b64decode(reminder_context.encode()).decode()
-            context_data = json.loads(decoded_context)
+        print(f"Received call from {caller}, call ID: {call_id}")
+        
+        # Check if this is a reminder call by detecting reminder_context parameter
+        reminder_context = request.args.get('reminder_context', None)
+        
+        # Initialize TwiML response
+        response = VoiceResponse()
+        
+        # Initialize conversation state for this call if it doesn't exist
+        if call_id not in conversation_queues:
+            conversation_queues[call_id] = queue.Queue()
+            print(f"Initialized new conversation for call {call_id}")
+        
+        # If it's a reminder call, decode the reminder context and use it
+        if reminder_context:
+            try:
+                # Decode base64 context
+                print(f"Processing reminder call with context: {reminder_context}")
+                decoded_context = base64.urlsafe_b64decode(reminder_context.encode()).decode()
+                context_data = json.loads(decoded_context)
+                
+                # Extract appointment details
+                client_name = context_data.get('client_name', 'client')
+                appointment_time = context_data.get('appointment_time', 'your upcoming appointment')
+                reminder_type = context_data.get('reminder_type', 'general')
+                
+                print(f"Reminder details: name={client_name}, time={appointment_time}, type={reminder_type}")
+                
+                # Construct a personalized prompt based on reminder type
+                if reminder_type == "hours_36_before":
+                    prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment scheduled in 36 hours at {appointment_time}. Would you like to confirm this appointment, or would you prefer to reschedule or cancel it?"
+                elif reminder_type == "thirty_min_before":
+                    prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment coming up in about 30 minutes at {appointment_time}. Are you still able to make it to your appointment today?"
+                else:
+                    prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling about your appointment scheduled for {appointment_time}. I wanted to confirm if you're still planning to attend this appointment?"
+                
+                # Process the prompt with language model
+                print(f"Sending prompt to LLM: {prompt}")
+                assistant_response = llm_processor.process(prompt)
+                print(f"LLM response: {assistant_response}")
+                
+                # Gather user input
+                gather = Gather(
+                    input='speech', 
+                    action=f'/handle-input?reminder_context={reminder_context}', 
+                    method='POST',
+                    timeout=5,
+                    speechTimeout="auto"
+                )
+                gather.say(assistant_response, voice="alice")
+                response.append(gather)
+                
+                # If no input is received, redirect to the input handler
+                response.redirect(f'/handle-input?reminder_context={reminder_context}', method='POST')
+                
+            except Exception as e:
+                print(f"Error processing reminder context: {e}")
+                import traceback
+                traceback.print_exc()
+                response.say("Hello, this is your appointment reminder. I'm having trouble accessing your appointment details. Please call us back for assistance.", voice="alice")
+        
+        else:
+            # Regular inbound call
+            greeting = "Hello, thanks for calling. How can I help you today?"
             
-            # Extract appointment details
-            client_name = context_data.get('client_name', 'client')
-            appointment_time = context_data.get('appointment_time', 'your upcoming appointment')
-            reminder_type = context_data.get('reminder_type', 'general')
-            
-            # Construct a personalized prompt based on reminder type
-            if reminder_type == "hours_36_before":
-                prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment scheduled in 36 hours at {appointment_time}. Would you like to confirm this appointment, or would you prefer to reschedule or cancel it?"
-            elif reminder_type == "thirty_min_before":
-                prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment coming up in about 30 minutes at {appointment_time}. Are you still able to make it to your appointment today?"
-            else:
-                prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling about your appointment scheduled for {appointment_time}. I wanted to confirm if you're still planning to attend this appointment?"
-            
-            # Process the prompt with language model
-            assistant_response = llm_processor.process(prompt)
+            # Process greeting with language model
+            print(f"Processing inbound call: {greeting}")
+            assistant_response = llm_processor.process(greeting)
+            print(f"LLM response: {assistant_response}")
             
             # Gather user input
-            gather = Gather(input='speech', action='/handle-input', method='POST', speechTimeout='auto', speechModel='phone_call')
-            gather.say(assistant_response)
+            gather = Gather(
+                input='speech', 
+                action='/handle-input', 
+                method='POST',
+                timeout=5,
+                speechTimeout="auto"
+            )
+            gather.say(assistant_response, voice="alice")
             response.append(gather)
             
-            # If no input is received, redirect to the input handler to get more input
-            response.redirect('/handle-input?reminder_context=' + reminder_context, method='POST')
-            
-        except Exception as e:
-            print(f"Error processing reminder context: {e}")
-            response.say("Hello, this is your appointment reminder. I'm having trouble accessing your appointment details. Please call us back for assistance.")
-    
-    else:
-        # Regular inbound call
-        greeting = "Hello, thanks for calling. How can I help you today?"
+            # If no input is received, redirect to the input handler
+            response.redirect('/handle-input', method='POST')
         
-        # Process greeting with language model
-        assistant_response = llm_processor.process(greeting)
+        print(f"Returning TwiML response: {str(response)}")
+        return str(response)
         
-        # Gather user input
-        gather = Gather(input='speech', action='/handle-input', method='POST', speechTimeout='auto', speechModel='phone_call')
-        gather.say(assistant_response)
-        response.append(gather)
+    except Exception as e:
+        print(f"Error in voice_webhook: {e}")
+        import traceback
+        traceback.print_exc()
         
-        # If no input is received, redirect to the input handler to get more input
-        response.redirect('/handle-input', method='POST')
-    
-    return str(response)
+        # Return a simple response in case of error
+        response = VoiceResponse()
+        response.say("I'm sorry, we're experiencing technical difficulties. Please try again later.", voice="alice")
+        response.hangup()
+        return str(response)
 
 @app.route("/handle-input", methods=["POST"])
 def handle_input():
     """Process user speech input and generate appropriate responses."""
-    # Get call information
-    call_sid = request.values.get("CallSid")
-    caller_number = request.values.get("From", "unknown")
-    
-    # Get what the user said
-    user_input = request.values.get("SpeechResult", "")
-    
-    # Get the reminder context parameter if it exists (for outbound calls)
-    reminder_context_encoded = request.args.get("reminder_context")
-    reminder_context = None
-    
-    if reminder_context_encoded:
-        try:
-            decoded_bytes = base64.urlsafe_b64decode(reminder_context_encoded)
-            reminder_context = json.loads(decoded_bytes.decode())
-        except Exception as e:
-            print(f"Error decoding reminder context: {e}")
-    
-    # Initialize TwiML response
-    response = VoiceResponse()
-    
-    if not user_input:
-        # If we didn't get any speech, try again
+    try:
+        # Get call information
+        call_sid = request.values.get("CallSid")
+        caller_number = request.values.get("From", "unknown")
+        
+        print(f"Processing input from call {call_sid}, caller: {caller_number}")
+        
+        # Get what the user said
+        user_input = request.values.get("SpeechResult", "")
+        print(f"User input: '{user_input}'")
+        
+        # Get the reminder context parameter if it exists (for outbound calls)
+        reminder_context_encoded = request.args.get("reminder_context")
+        reminder_context = None
+        
+        if reminder_context_encoded:
+            try:
+                print(f"Processing with reminder context: {reminder_context_encoded}")
+                decoded_bytes = base64.urlsafe_b64decode(reminder_context_encoded)
+                reminder_context = json.loads(decoded_bytes.decode())
+                print(f"Decoded reminder context: {reminder_context}")
+            except Exception as e:
+                print(f"Error decoding reminder context: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Initialize TwiML response
+        response = VoiceResponse()
+        
+        if not user_input:
+            # If we didn't get any speech, try again
+            print("No speech input detected. Prompting for retry.")
+            gather = Gather(
+                input="speech",
+                action=f"/handle-input{('?reminder_context=' + reminder_context_encoded) if reminder_context_encoded else ''}",
+                method="POST",
+                timeout=5,
+                speechTimeout="auto"
+            )
+            gather.say("I'm sorry, I didn't catch that. Could you please repeat?", voice="alice")
+            response.append(gather)
+            
+            # If nothing is said again, end the call
+            response.say("I haven't heard from you. I'll end the call now. Feel free to call back later.", voice="alice")
+            response.hangup()
+            
+            return str(response)
+        
+        # Process the user input with our language model
+        print(f"Sending user input to LLM: {user_input}")
+        llm_response = llm_processor.process(user_input)
+        print(f"LLM response: {llm_response}")
+        
+        # Check for special commands in the response
+        if "CHECK_APPOINTMENTS:" in llm_response:
+            # User is asking about appointments
+            name = llm_response.split("CHECK_APPOINTMENTS:")[1].strip()
+            appointments = appointment_db.get_appointments_by_name(name)
+            
+            if appointments:
+                # Format appointments for speech
+                if len(appointments) == 1:
+                    appt = appointments[0]
+                    appointment_info = f"I found one appointment for {name}. You're scheduled for {appt['appointment_time']}."
+                    if appt.get('notes'):
+                        appointment_info += f" Notes: {appt['notes']}."
+                else:
+                    appointment_info = f"I found {len(appointments)} appointments for {name}. "
+                    for i, appt in enumerate(appointments[:3]):  # Limit to first 3 to keep response manageable
+                        appointment_info += f"Appointment {i+1}: {appt['appointment_time']}. "
+                    if len(appointments) > 3:
+                        appointment_info += f"And {len(appointments) - 3} more. "
+                
+                # Speak the appointment information
+                response.say(appointment_info, voice="alice")
+            else:
+                # No appointments found
+                no_appointments_msg = f"I couldn't find any appointments for {name}. Would you like to schedule one now?"
+                response.say(no_appointments_msg, voice="alice")
+        
+        elif "APPOINTMENT_BOOKED:" in llm_response:
+            # Extract appointment data
+            appointment_info = llm_response.split("APPOINTMENT_BOOKED:")[1].strip()
+            name, time, notes = appointment_info.split("|")
+            
+            # Save appointment to database, including caller's phone number
+            appointment_id = appointment_db.save_appointment(
+                name=name, 
+                appointment_time=time, 
+                notes=notes,
+                phone_number=caller_number
+            )
+            
+            # Log the appointment with phone number
+            print("\nAppointment Details:")
+            print(f"Name: {name}")
+            print(f"Time: {time}")
+            print(f"Notes: {notes}")
+            print(f"Phone: {caller_number}")
+            print(f"Appointment ID: {appointment_id}")
+            
+            # Confirm to the user that the appointment was saved
+            confirmation = f"Thank you {name.split()[0]}. Your appointment for {time} has been confirmed and saved. Is there anything else I can help you with today?"
+            response.say(confirmation, voice="alice")
+        
+        elif "CANCEL_APPOINTMENT:" in llm_response and reminder_context:
+            # Extract the name from the response
+            name = llm_response.split("CANCEL_APPOINTMENT:")[1].strip()
+            appointment_id = reminder_context.get("appointment_id")
+            
+            # In a real system, you would implement actual cancellation logic here
+            # For now, we'll just acknowledge the cancellation
+            
+            message = f"I understand you'd like to cancel your appointment, {name}. I've noted your cancellation. Is there anything else I can help you with today?"
+            response.say(message, voice="alice")
+        
+        elif "RESCHEDULE_APPOINTMENT:" in llm_response and reminder_context:
+            # Extract rescheduling info
+            reschedule_info = llm_response.split("RESCHEDULE_APPOINTMENT:")[1].strip()
+            parts = reschedule_info.split("|")
+            name = parts[0]
+            new_time = parts[1] if len(parts) > 1 else "a new time"
+            appointment_id = reminder_context.get("appointment_id")
+            
+            # In a real system, you would implement actual rescheduling logic here
+            # For now, we'll just acknowledge the reschedule request
+            
+            message = f"Thank you {name}. I've rescheduled your appointment for {new_time}. We look forward to seeing you then. Is there anything else I can help you with?"
+            response.say(message, voice="alice")
+        
+        elif "APPOINTMENT_CONFIRMED:" in llm_response and reminder_context:
+            # Extract the name from the response
+            name = llm_response.split("APPOINTMENT_CONFIRMED:")[1].strip()
+            appointment_id = reminder_context.get("appointment_id")
+            appointment_time = reminder_context.get("appointment_time")
+            
+            # In a real system, you might mark the appointment as confirmed in the database
+            
+            message = f"Perfect, {name}. Your appointment for {appointment_time} is confirmed. We look forward to seeing you. Is there anything else I can help you with today?"
+            response.say(message, voice="alice")
+        
+        elif "CONVERSATION_ENDED" in llm_response:
+            # End the conversation
+            farewell = "Thank you for calling. Have a great day!"
+            response.say(farewell, voice="alice")
+            response.hangup()
+            
+            # Clean up the conversation state
+            if call_sid in conversation_queues:
+                del conversation_queues[call_sid]
+            
+            return str(response)
+        
+        else:
+            # Regular response
+            response.say(llm_response, voice="alice")
+        
+        # Gather next user input
         gather = Gather(
             input="speech",
-            action="/handle-input" + (f"?reminder_context={reminder_context_encoded}" if reminder_context_encoded else ""),
+            action=f"/handle-input{('?reminder_context=' + reminder_context_encoded) if reminder_context_encoded else ''}",
             method="POST",
-            speech_timeout="auto",
-            language="en-US"
+            timeout=5,
+            speechTimeout="auto"
         )
-        gather.say("I'm sorry, I didn't catch that. Could you please repeat?", voice="alice")
+        gather.say("Is there anything else I can help you with?", voice="alice")
         response.append(gather)
-        return Response(str(response), mimetype="text/xml")
-    
-    # Process the user input with our language model
-    llm_response = llm_processor.process(user_input)
-    
-    # Check for special commands in the response
-    if "CHECK_APPOINTMENTS:" in llm_response:
-        # User is asking about appointments
-        name = llm_response.split("CHECK_APPOINTMENTS:")[1].strip()
-        appointments = appointment_db.get_appointments_by_name(name)
         
-        if appointments:
-            # Format appointments for speech
-            if len(appointments) == 1:
-                appt = appointments[0]
-                appointment_info = f"I found one appointment for {name}. You're scheduled for {appt['appointment_time']}."
-                if appt['notes']:
-                    appointment_info += f" Notes: {appt['notes']}."
-            else:
-                appointment_info = f"I found {len(appointments)} appointments for {name}. "
-                for i, appt in enumerate(appointments[:3]):  # Limit to first 3 to keep response manageable
-                    appointment_info += f"Appointment {i+1}: {appt['appointment_time']}. "
-                if len(appointments) > 3:
-                    appointment_info += f"And {len(appointments) - 3} more. "
-            
-            # Speak the appointment information
-            response.say(appointment_info, voice="alice")
-        else:
-            # No appointments found
-            no_appointments_msg = f"I couldn't find any appointments for {name}. Would you like to schedule one now?"
-            response.say(no_appointments_msg, voice="alice")
-    
-    elif "APPOINTMENT_BOOKED:" in llm_response:
-        # Extract appointment data
-        appointment_info = llm_response.split("APPOINTMENT_BOOKED:")[1].strip()
-        name, time, notes = appointment_info.split("|")
-        
-        # Save appointment to database, including caller's phone number
-        appointment_id = appointment_db.save_appointment(
-            name=name, 
-            appointment_time=time, 
-            notes=notes,
-            phone_number=caller_number
-        )
-        
-        # Log the appointment with phone number
-        print("\nAppointment Details:")
-        print(f"Name: {name}")
-        print(f"Time: {time}")
-        print(f"Notes: {notes}")
-        print(f"Phone: {caller_number}")
-        print(f"Appointment ID: {appointment_id}")
-        
-        # Confirm to the user that the appointment was saved
-        confirmation = f"Thank you {name.split()[0]}. Your appointment for {time} has been confirmed and saved. Is there anything else I can help you with today?"
-        response.say(confirmation, voice="alice")
-    
-    elif "CANCEL_APPOINTMENT:" in llm_response and reminder_context:
-        # Extract the name from the response
-        name = llm_response.split("CANCEL_APPOINTMENT:")[1].strip()
-        appointment_id = reminder_context.get("appointment_id")
-        
-        # In a real system, you would implement actual cancellation logic here
-        # For now, we'll just acknowledge the cancellation
-        
-        message = f"I understand you'd like to cancel your appointment, {name}. I've noted your cancellation. Is there anything else I can help you with today?"
-        response.say(message, voice="alice")
-    
-    elif "RESCHEDULE_APPOINTMENT:" in llm_response and reminder_context:
-        # Extract rescheduling info
-        reschedule_info = llm_response.split("RESCHEDULE_APPOINTMENT:")[1].strip()
-        parts = reschedule_info.split("|")
-        name = parts[0]
-        new_time = parts[1] if len(parts) > 1 else "a new time"
-        appointment_id = reminder_context.get("appointment_id")
-        
-        # In a real system, you would implement actual rescheduling logic here
-        # For now, we'll just acknowledge the reschedule request
-        
-        message = f"Thank you {name}. I've rescheduled your appointment for {new_time}. We look forward to seeing you then. Is there anything else I can help you with?"
-        response.say(message, voice="alice")
-    
-    elif "APPOINTMENT_CONFIRMED:" in llm_response and reminder_context:
-        # Extract the name from the response
-        name = llm_response.split("APPOINTMENT_CONFIRMED:")[1].strip()
-        appointment_id = reminder_context.get("appointment_id")
-        appointment_time = reminder_context.get("appointment_time")
-        
-        # In a real system, you might mark the appointment as confirmed in the database
-        
-        message = f"Perfect, {name}. Your appointment for {appointment_time} is confirmed. We look forward to seeing you. Is there anything else I can help you with today?"
-        response.say(message, voice="alice")
-    
-    elif "CONVERSATION_ENDED" in llm_response:
-        # End the conversation
-        farewell = "Thank you for calling. Have a great day!"
-        response.say(farewell, voice="alice")
+        # If user doesn't say anything, wrap up the call gracefully
+        response.say("Thank you for your time. Feel free to call again if you need any assistance. Goodbye!", voice="alice")
         response.hangup()
         
-        # Clean up the conversation state
-        if call_sid in conversation_queues:
-            del conversation_queues[call_sid]
+        return str(response)
         
-        return Response(str(response), mimetype="text/xml")
-    
-    else:
-        # Regular response
-        response.say(llm_response, voice="alice")
-    
-    # Gather next user input
-    gather = Gather(
-        input="speech",
-        action="/handle-input" + (f"?reminder_context={reminder_context_encoded}" if reminder_context_encoded else ""),
-        method="POST",
-        speech_timeout="auto",
-        language="en-US"
-    )
-    response.append(gather)
-    
-    # If user doesn't say anything, try again
-    response.redirect("/handle-input" + (f"?reminder_context={reminder_context_encoded}" if reminder_context_encoded else ""))
-    
-    return Response(str(response), mimetype="text/xml")
+    except Exception as e:
+        print(f"Error in handle_input: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return a simple response in case of error
+        response = VoiceResponse()
+        response.say("I'm sorry, we're experiencing technical difficulties. Please try again later.", voice="alice")
+        response.hangup()
+        return str(response)
 
 @app.route("/sms", methods=["POST"])
 def sms_webhook():
