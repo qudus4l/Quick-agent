@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 import threading
 import queue
 import time
+import base64
 
 # Import from QuickAgent
 from QuickAgent import AppointmentDatabase, LanguageModelProcessor
@@ -52,89 +53,73 @@ conversation_queues = {}
 
 @app.route("/voice", methods=["POST"])
 def voice_webhook():
-    """Handle incoming voice calls from Twilio and outbound reminder calls."""
-    # Get the caller's phone number and call ID
-    caller_number = request.values.get("From", "unknown")
-    call_sid = request.values.get("CallSid")
+    """
+    Handle incoming voice calls or outbound reminder calls.
+    This function checks if there's a reminder_context parameter, which indicates
+    it's an outbound reminder call. Otherwise, it handles regular inbound calls.
+    """
+    # Get caller's phone number and call ID
+    caller = request.form.get('From', '')
+    call_id = request.form.get('CallSid', '')
+
+    # Check if this is a reminder call by detecting reminder_context parameter
+    reminder_context = request.args.get('reminder_context', None)
     
-    # Check if this is a reminder call by looking for the reminder_context parameter
-    reminder_context_encoded = request.args.get("reminder_context")
-    
-    # Initialize TwiML response
+    # Initialize TwiML response and conversation state
     response = VoiceResponse()
+    conversation_state = {}
     
-    # Initialize conversation state
-    if call_sid not in conversation_queues:
-        conversation_queues[call_sid] = queue.Queue()
-    
-    # If this is a reminder call, prime the assistant with the reminder context
-    if reminder_context_encoded:
+    # If it's a reminder call, decode the reminder context and use it
+    if reminder_context:
         try:
-            # Decode the reminder context
-            import base64
-            import json
-            decoded_bytes = base64.urlsafe_b64decode(reminder_context_encoded)
-            reminder_context = json.loads(decoded_bytes.decode())
+            # Decode base64 context
+            decoded_context = base64.urlsafe_b64decode(reminder_context.encode()).decode()
+            context_data = json.loads(decoded_context)
             
-            # Extract reminder information
-            client_name = reminder_context.get("client_name", "")
-            appointment_time = reminder_context.get("appointment_time", "")
-            reminder_type = reminder_context.get("reminder_type", "general")
+            # Extract appointment details
+            client_name = context_data.get('client_name', 'client')
+            appointment_time = context_data.get('appointment_time', 'your upcoming appointment')
+            reminder_type = context_data.get('reminder_type', 'general')
             
-            # Construct a specific prompt for the LLM based on reminder type
-            if reminder_type == "day_before":
-                initial_prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment scheduled for tomorrow at {appointment_time}. Would you like to confirm this appointment, or would you prefer to reschedule or cancel it?"
+            # Construct a personalized prompt based on reminder type
+            if reminder_type == "hours_36_before":
+                prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment scheduled in 36 hours at {appointment_time}. Would you like to confirm this appointment, or would you prefer to reschedule or cancel it?"
             elif reminder_type == "thirty_min_before":
-                initial_prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment coming up in about 30 minutes at {appointment_time}. Are you still able to make it to your appointment today?"
+                prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment coming up in about 30 minutes at {appointment_time}. Are you still able to make it to your appointment today?"
             else:
-                initial_prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling about your appointment scheduled for {appointment_time}. I wanted to confirm if you're still planning to attend this appointment?"
+                prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling about your appointment scheduled for {appointment_time}. I wanted to confirm if you're still planning to attend this appointment?"
             
-            # Process with the language model
-            greeting = llm_processor.process(initial_prompt)
-            
-            # Add greeting to the response
-            response.say(greeting, voice="alice")
+            # Process the prompt with language model
+            assistant_response = llm_processor.process(prompt)
             
             # Gather user input
-            gather = Gather(
-                input="speech",
-                action="/handle-input",
-                method="POST",
-                speech_timeout="auto",
-                language="en-US"
-            )
+            gather = Gather(input='speech', action='/handle-input', method='POST', speechTimeout='auto', speechModel='phone_call')
+            gather.say(assistant_response)
             response.append(gather)
             
-            # If user doesn't say anything, try again
-            response.redirect("/voice?reminder_context=" + reminder_context_encoded)
-            
-            return Response(str(response), mimetype="text/xml")
+            # If no input is received, redirect to the input handler to get more input
+            response.redirect('/handle-input?reminder_context=' + reminder_context, method='POST')
             
         except Exception as e:
             print(f"Error processing reminder context: {e}")
-            # Fall back to normal greeting if there's an error
+            response.say("Hello, this is your appointment reminder. I'm having trouble accessing your appointment details. Please call us back for assistance.")
     
-    # This is a normal inbound call - use the standard greeting flow
-    greeting = llm_processor.process("START_CONVERSATION")
+    else:
+        # Regular inbound call
+        greeting = "Hello, thanks for calling. How can I help you today?"
+        
+        # Process greeting with language model
+        assistant_response = llm_processor.process(greeting)
+        
+        # Gather user input
+        gather = Gather(input='speech', action='/handle-input', method='POST', speechTimeout='auto', speechModel='phone_call')
+        gather.say(assistant_response)
+        response.append(gather)
+        
+        # If no input is received, redirect to the input handler to get more input
+        response.redirect('/handle-input', method='POST')
     
-    # Add greeting to the response
-    response.say(greeting, voice="alice")
-    
-    # Gather user input
-    gather = Gather(
-        input="speech",
-        action="/handle-input",
-        method="POST",
-        speech_timeout="auto",
-        language="en-US"
-    )
-    gather.say("How can I help you today?", voice="alice")
-    response.append(gather)
-    
-    # If user doesn't say anything, try again
-    response.redirect("/voice")
-    
-    return Response(str(response), mimetype="text/xml")
+    return str(response)
 
 @app.route("/handle-input", methods=["POST"])
 def handle_input():
@@ -152,8 +137,6 @@ def handle_input():
     
     if reminder_context_encoded:
         try:
-            import base64
-            import json
             decoded_bytes = base64.urlsafe_b64decode(reminder_context_encoded)
             reminder_context = json.loads(decoded_bytes.decode())
         except Exception as e:

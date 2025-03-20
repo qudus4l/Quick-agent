@@ -96,95 +96,92 @@ def parse_appointment_time(appointment_time):
         print(f"Error parsing appointment time: {e}")
         return None, None
 
-def should_send_reminder(appointment):
+def should_send_reminder(appointment_datetime):
     """
     Determine if a reminder should be sent for this appointment.
-    
-    Reminders will be sent:
-    1. One day before the appointment
-    2. 30 minutes before the appointment (changed from 1 hour)
+    We'll send reminders in two cases:
+    1. It's about 36 hours before the appointment (with a 15-minute window)
+    2. It's about 30 minutes before the appointment (with a 5-minute window)
     """
-    appointment_time = appointment['appointment_time']
-    appointment_datetime, days_until = parse_appointment_time(appointment_time)
+    now = datetime.now()
     
-    if appointment_datetime is None:
-        return False, None
+    # Calculate time until appointment
+    time_until_appointment = appointment_datetime - now
+    hours_until_appointment = time_until_appointment.total_seconds() / 3600
     
-    now = datetime.datetime.now()
+    # Define reminder windows
+    # 36-hour window: Between 36 hours and 15 minutes before and 35 hours and 45 minutes before
+    hours_36_before_start = 36.25  # 36 hours and 15 minutes
+    hours_36_before_end = 35.75    # 35 hours and 45 minutes
     
-    # One day before
-    one_day_before = appointment_datetime - datetime.timedelta(days=1)
-    one_day_window = (
-        one_day_before - datetime.timedelta(minutes=15),
-        one_day_before + datetime.timedelta(minutes=15)
-    )
+    # 30-minute window: Between 35 minutes and 25 minutes before
+    thirty_min_before_start = 0.58  # 35 minutes
+    thirty_min_before_end = 0.42    # 25 minutes
     
-    # 30 minutes before (changed from 1 hour)
-    thirty_min_before = appointment_datetime - datetime.timedelta(minutes=30)
-    thirty_min_window = (
-        thirty_min_before - datetime.timedelta(minutes=5),
-        thirty_min_before + datetime.timedelta(minutes=5)
-    )
-    
-    # Check if current time falls within reminder windows
-    if one_day_window[0] <= now <= one_day_window[1]:
-        return True, "day_before"
-    elif thirty_min_window[0] <= now <= thirty_min_window[1]:
-        return True, "thirty_min_before"
-    
-    return False, None
+    # Check if current time falls within either reminder window
+    if hours_36_before_end <= hours_until_appointment <= hours_36_before_start:
+        return "hours_36_before"  # It's about 36 hours before
+    elif thirty_min_before_end <= hours_until_appointment <= thirty_min_before_start:
+        return "thirty_min_before"  # It's about 30 minutes before
+    else:
+        return False  # Not time for a reminder yet
 
-def make_reminder_call(appointment, reminder_type="general"):
+def make_reminder_call(appointment_id, reminder_type):
     """
-    Make an outgoing call to remind the user of their appointment.
-    The call will connect to the conversational assistant for natural language interaction.
-    
-    Parameters:
-    - appointment: The appointment record from the database
-    - reminder_type: 'day_before', 'thirty_min_before', or 'general'
+    Make a phone call to remind a client about their upcoming appointment
     """
-    # Get phone number for this client - use stored number if available
-    client_phone = appointment.get('phone_number')
-    
-    # Fall back to test phone if no stored number
-    if not client_phone:
-        client_phone = os.getenv("TEST_CLIENT_PHONE")
-        print(f"No stored phone number found, using test number: {client_phone}")
-    
-    if not client_phone:
-        print("Error: No phone number available for this appointment")
-        return False
-    
-    # Create a context parameter that informs the assistant this is a reminder call
-    reminder_context = {
-        "appointment_id": appointment['id'],
-        "appointment_time": appointment['appointment_time'],
-        "client_name": appointment['name'],
-        "reminder_type": reminder_type,
-        "is_reminder_call": True  # Flag to identify this as a reminder call
-    }
-    
-    # Encode context as URL-safe base64 string
-    context_json = json.dumps(reminder_context)
-    encoded_context = base64.urlsafe_b64encode(context_json.encode()).decode()
-    
-    # Create a callback URL for the assistant
-    callback_url = f"{os.getenv('PUBLIC_URL', 'http://example.com')}/voice?reminder_context={encoded_context}"
-    
     try:
-        # Make the call
-        call = twilio_client.calls.create(
-            to=client_phone,
-            from_=os.getenv("TWILIO_PHONE_NUMBER"),
-            url=callback_url,
-            method="POST"
-        )
+        # Load the appointment details from database
+        appointment = get_appointment(appointment_id)
+        if not appointment:
+            print(f"Could not find appointment with ID {appointment_id}")
+            return False
         
-        print(f"Reminder call initiated for {appointment['name']} to {client_phone} - Call SID: {call.sid}")
-        return True
+        # Extract appointment details
+        client_name = appointment.get('client_name', 'valued client')
+        appointment_time = format_appointment_time(appointment['appointment_datetime'])
         
+        # Get client phone number, or use test number if none is available
+        client_phone = appointment.get('phone_number')
+        if not client_phone:
+            client_phone = os.getenv("TEST_PHONE_NUMBER", "+15551234567")
+        
+        # Create a context object for the conversational assistant
+        context = {
+            "is_reminder_call": True,
+            "appointment_id": appointment_id,
+            "client_name": client_name,
+            "appointment_time": appointment_time,
+            "reminder_type": reminder_type,
+        }
+        
+        # Encode the context as a URL-safe base64 string
+        context_json = json.dumps(context)
+        context_encoded = base64.urlsafe_b64encode(context_json.encode()).decode()
+        
+        # Generate callback URL with context
+        callback_url = f"{os.getenv('SERVER_BASE_URL', 'http://localhost:5000')}/voice?reminder_context={context_encoded}"
+        
+        # Make the call using Twilio
+        try:
+            from twilio_config import twilio_client
+            call = twilio_client.calls.create(
+                to=client_phone,
+                from_=os.getenv("TWILIO_PHONE_NUMBER"),
+                url=callback_url,
+                method="POST"
+            )
+            print(f"Call initiated to {client_phone} for appointment {appointment_id}, SID: {call.sid}")
+            
+            # Update appointment with call status
+            update_appointment_reminder_status(appointment_id, reminder_type, "sent")
+            return True
+        except Exception as e:
+            print(f"Error making Twilio call: {e}")
+            return False
+            
     except Exception as e:
-        print(f"Error making reminder call: {e}")
+        print(f"Error in make_reminder_call: {e}")
         return False
 
 def check_upcoming_appointments():
@@ -194,9 +191,9 @@ def check_upcoming_appointments():
     
     reminders_sent = 0
     for appointment in appointments:
-        should_remind, reminder_type = should_send_reminder(appointment)
+        should_remind = should_send_reminder(appointment['appointment_datetime'])
         if should_remind:
-            success = make_reminder_call(appointment, reminder_type)
+            success = make_reminder_call(appointment['id'], should_remind)
             if success:
                 reminders_sent += 1
     
@@ -227,7 +224,7 @@ def remind_specific_appointment(appointment_id):
             return False
         
         # Make the reminder call
-        success = make_reminder_call(appointment, reminder_type="general")
+        success = make_reminder_call(appointment['id'], should_send_reminder(appointment['appointment_datetime']))
         
         return success
     except Exception as e:

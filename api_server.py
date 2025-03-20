@@ -18,10 +18,11 @@ from flask_cors import CORS
 from datetime import datetime
 from dotenv import load_dotenv
 from twilio.rest import Client
+import threading
 
 # Import from QuickAgent
 from QuickAgent import AppointmentDatabase
-from appointment_reminder import remind_specific_appointment, parse_appointment_time
+from appointment_reminder import remind_specific_appointment, parse_appointment_time, run_scheduler
 
 # Load environment variables
 load_dotenv()
@@ -280,4 +281,10 @@ def logo():
 if __name__ == '__main__':
     print("Starting API Server for Appointment Management System...")
     print("Access the dashboard at http://localhost:5001")
+    
+    # Start the appointment reminder scheduler in a background thread
+    reminder_thread = threading.Thread(target=run_scheduler, daemon=True)
+    reminder_thread.start()
+    print("Appointment reminder scheduler started in background.")
+    
     app.run(host='0.0.0.0', port=5001, debug=True) 
