@@ -12,8 +12,7 @@ import {
   CircularProgress
 } from '@mui/material';
 import { Phone as PhoneIcon, PhoneCallback as PhoneCallbackIcon } from '@mui/icons-material';
-import axios from 'axios';
-import config from '../config';
+import apiService from '../services/api';
 
 function TestPage() {
   const [twilioPhone, setTwilioPhone] = useState('');
@@ -29,14 +28,14 @@ function TestPage() {
     const fetchPhoneNumbers = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`${config.apiBaseUrl}${config.endpoints.phoneNumbers}`);
+        const data = await apiService.getPhoneNumbers();
         
-        if (response.data && response.data.twilioPhone) {
-          setTwilioPhone(response.data.twilioPhone);
+        if (data && data.twilioPhone) {
+          setTwilioPhone(data.twilioPhone);
         }
         
-        if (response.data && response.data.testClientPhone) {
-          setTestClientPhone(response.data.testClientPhone);
+        if (data && data.testClientPhone) {
+          setTestClientPhone(data.testClientPhone);
         }
         
         setLoading(false);
@@ -68,12 +67,12 @@ function TestPage() {
     
     try {
       setCallingClient(true);
-      const response = await axios.post(`${config.apiBaseUrl}${config.endpoints.callTestClient}`);
+      const data = await apiService.callTestClient();
       
-      if (response.data && response.data.success) {
+      if (data && data.success) {
         setSnackbarMessage(`Agent is calling the test client: ${testClientPhone}`);
       } else {
-        setSnackbarMessage(response.data.message || 'Failed to initiate call');
+        setSnackbarMessage(data.message || 'Failed to initiate call');
       }
       
       setSnackbarOpen(true);
@@ -86,106 +85,96 @@ function TestPage() {
     }
   };
 
-  const handleCloseSnackbar = () => {
+  const handleSnackbarClose = () => {
     setSnackbarOpen(false);
   };
 
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
   return (
-    <Box>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Test Page
+    <Box sx={{ padding: 3 }}>
+      <Typography variant="h4" gutterBottom>
+        Test Tools
       </Typography>
       
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={{ marginBottom: 2 }}>
           {error}
         </Alert>
       )}
-
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h5" component="h2" gutterBottom>
-                Call the Agent
-              </Typography>
-              <Typography variant="body1" color="text.secondary" paragraph>
-                Click the button below to call the Agent via your phone app. 
-                This simulates an inbound call to the system.
-              </Typography>
-              
-              <Paper elevation={1} sx={{ p: 2, mb: 2, bgcolor: 'background.default' }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Twilio Phone Number:
-                </Typography>
-                <Typography variant="h6">
-                  {twilioPhone || 'Not available'}
-                </Typography>
-              </Paper>
-              
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<PhoneIcon />}
-                fullWidth
-                size="large"
-                onClick={handleCallAgent}
-                disabled={!twilioPhone}
-              >
-                Call Agent
-              </Button>
-            </CardContent>
-          </Card>
+      
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', marginY: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Paper elevation={2} sx={{ height: '100%' }}>
+              <Card sx={{ height: '100%' }}>
+                <CardContent>
+                  <Typography variant="h5" component="div" gutterBottom>
+                    Call the Agent
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary" paragraph>
+                    You can test the agent by calling the Twilio number directly.
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" paragraph>
+                    Twilio Number: {twilioPhone || 'Not configured'}
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<PhoneIcon />}
+                    onClick={handleCallAgent}
+                    disabled={!twilioPhone}
+                    sx={{ marginTop: 2 }}
+                  >
+                    Call Agent
+                  </Button>
+                </CardContent>
+              </Card>
+            </Paper>
+          </Grid>
+          
+          <Grid item xs={12} md={6}>
+            <Paper elevation={2} sx={{ height: '100%' }}>
+              <Card sx={{ height: '100%' }}>
+                <CardContent>
+                  <Typography variant="h5" component="div" gutterBottom>
+                    Test Agent Outbound Call
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary" paragraph>
+                    Test the agent's ability to make outbound calls to a client.
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" paragraph>
+                    Test Client Number: {testClientPhone || 'Not configured'}
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    startIcon={<PhoneCallbackIcon />}
+                    onClick={handleCallClient}
+                    disabled={!testClientPhone || callingClient}
+                    sx={{ marginTop: 2 }}
+                  >
+                    {callingClient ? (
+                      <>
+                        <CircularProgress size={24} sx={{ marginRight: 1, color: 'white' }} />
+                        Calling...
+                      </>
+                    ) : (
+                      "Have Agent Call Client"
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            </Paper>
+          </Grid>
         </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h5" component="h2" gutterBottom>
-                Test Client Phone
-              </Typography>
-              <Typography variant="body1" color="text.secondary" paragraph>
-                Click the button below to have the Agent call the test client phone number.
-                This simulates an outbound call from the system.
-              </Typography>
-              
-              <Paper elevation={1} sx={{ p: 2, mb: 2, bgcolor: 'background.default' }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Test Client Phone Number:
-                </Typography>
-                <Typography variant="h6">
-                  {testClientPhone || 'Not available'}
-                </Typography>
-              </Paper>
-              
-              <Button
-                variant="contained"
-                color="secondary"
-                startIcon={<PhoneCallbackIcon />}
-                fullWidth
-                size="large"
-                onClick={handleCallClient}
-                disabled={!testClientPhone || callingClient}
-              >
-                {callingClient ? 'Calling...' : 'Have Agent Call Client'}
-              </Button>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
+      )}
+      
       <Snackbar
         open={snackbarOpen}
         autoHideDuration={6000}
-        onClose={handleCloseSnackbar}
+        onClose={handleSnackbarClose}
         message={snackbarMessage}
       />
     </Box>
