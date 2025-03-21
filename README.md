@@ -120,5 +120,73 @@ For convenience, you can run all the services at once using separate terminal wi
 2. API server: `python api_server.py`
 3. Appointment reminder: `python appointment_reminder.py schedule`
 
+## HTTPS Configuration for Twilio Webhooks
+
+Twilio requires webhook URLs to use HTTPS for security reasons. There are several ways to handle this:
+
+### Option 1: Using ngrok for Development
+
+1. Install ngrok: https://ngrok.com/download
+
+2. Start ngrok to create a secure tunnel to your webhook handler:
+   ```
+   ngrok http 5000
+   ```
+
+3. Update the `.env` file with the HTTPS URL provided by ngrok:
+   ```
+   SERVER_BASE_URL=https://your-ngrok-url.ngrok.io
+   ```
+
+4. Configure your Twilio phone number webhooks to use the HTTPS URL:
+   - Voice: https://your-ngrok-url.ngrok.io/voice
+   - SMS: https://your-ngrok-url.ngrok.io/sms
+
+### Option 2: Using SSL with Flask for Production
+
+For production environments, use the included SSL script:
+
+1. Generate self-signed certificates (or provide your own valid certificates):
+   ```
+   openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365
+   ```
+
+2. Run the Twilio handler with SSL support:
+   ```
+   python run_with_ssl.py
+   ```
+
+3. If using a reverse proxy like Nginx, configure it to handle SSL termination and forward requests to the Flask app.
+
+## Usage
+
+### Appointment Reminders
+
+The system automatically checks for upcoming appointments and sends reminders:
+- 36 hours before the appointment time
+- 30 minutes before the appointment time
+
+The reminder scheduler starts automatically when the API server runs.
+
+### Testing Appointment Reminders
+
+Trigger a test reminder call for a specific appointment:
+
 ```
-python3 QuickAgent.py
+python appointment_reminder.py remind APPOINTMENT_ID
+```
+
+## Troubleshooting
+
+### SSL/TLS Connection Issues
+
+If you see errors like:
+```
+code 400, message Bad request syntax ('\x16\x03\x01\x01')
+```
+
+This indicates Twilio is trying to connect using HTTPS but your server is only configured for HTTP. Use one of the HTTPS configuration options described above.
+
+## License
+
+MIT

@@ -212,16 +212,43 @@ def handle_input():
             
             return str(response)
         
+        # Initialize conversation state tracking if needed
+        if call_sid not in conversation_queues:
+            conversation_queues[call_sid] = queue.Queue()
+            print(f"Initialized new conversation state for call {call_sid}")
+            conversation_state = {"intent": None, "booking_stage": None, "collected_info": {}}
+            conversation_queues[call_sid].put(conversation_state)
+        else:
+            try:
+                # Get existing conversation state
+                conversation_state = conversation_queues[call_sid].get(block=False)
+                print(f"Retrieved conversation state: {conversation_state}")
+            except queue.Empty:
+                # If queue is empty, initialize a new conversation state
+                conversation_state = {"intent": None, "booking_stage": None, "collected_info": {}}
+            
+        # Detect intent from user input if not already set
+        if not conversation_state.get("intent") and "book" in user_input.lower():
+            conversation_state["intent"] = "booking"
+            conversation_state["booking_stage"] = "need_name"
+            print(f"Detected booking intent from user input: {user_input}")
+        
         # Process the user input with our language model
         print(f"Sending user input to LLM: {user_input}")
         llm_response = llm_processor.process(user_input)
         print(f"LLM response: {llm_response}")
+        
+        # Track if we need to add a follow-up question
+        need_follow_up = True
         
         # Check for special commands in the response
         if "CHECK_APPOINTMENTS:" in llm_response:
             # User is asking about appointments
             name = llm_response.split("CHECK_APPOINTMENTS:")[1].strip()
             appointments = appointment_db.get_appointments_by_name(name)
+            
+            # Update conversation state
+            conversation_state["intent"] = "check_appointments"
             
             if appointments:
                 # Format appointments for speech
@@ -249,6 +276,10 @@ def handle_input():
             appointment_info = llm_response.split("APPOINTMENT_BOOKED:")[1].strip()
             name, time, notes = appointment_info.split("|")
             
+            # Update conversation state
+            conversation_state["intent"] = "booking_complete"
+            conversation_state["booking_stage"] = "complete"
+            
             # Save appointment to database, including caller's phone number
             appointment_id = appointment_db.save_appointment(
                 name=name, 
@@ -268,17 +299,26 @@ def handle_input():
             # Confirm to the user that the appointment was saved
             confirmation = f"Thank you {name.split()[0]}. Your appointment for {time} has been confirmed and saved. Is there anything else I can help you with today?"
             response.say(confirmation, voice="alice")
+            
+            # Follow-up is already included in the confirmation message
+            need_follow_up = False
         
         elif "CANCEL_APPOINTMENT:" in llm_response and reminder_context:
             # Extract the name from the response
             name = llm_response.split("CANCEL_APPOINTMENT:")[1].strip()
             appointment_id = reminder_context.get("appointment_id")
             
+            # Update conversation state
+            conversation_state["intent"] = "cancellation_complete"
+            
             # In a real system, you would implement actual cancellation logic here
             # For now, we'll just acknowledge the cancellation
             
             message = f"I understand you'd like to cancel your appointment, {name}. I've noted your cancellation. Is there anything else I can help you with today?"
             response.say(message, voice="alice")
+            
+            # Follow-up is already included in the message
+            need_follow_up = False
         
         elif "RESCHEDULE_APPOINTMENT:" in llm_response and reminder_context:
             # Extract rescheduling info
@@ -288,11 +328,17 @@ def handle_input():
             new_time = parts[1] if len(parts) > 1 else "a new time"
             appointment_id = reminder_context.get("appointment_id")
             
+            # Update conversation state
+            conversation_state["intent"] = "reschedule_complete"
+            
             # In a real system, you would implement actual rescheduling logic here
             # For now, we'll just acknowledge the reschedule request
             
             message = f"Thank you {name}. I've rescheduled your appointment for {new_time}. We look forward to seeing you then. Is there anything else I can help you with?"
             response.say(message, voice="alice")
+            
+            # Follow-up is already included in the message
+            need_follow_up = False
         
         elif "APPOINTMENT_CONFIRMED:" in llm_response and reminder_context:
             # Extract the name from the response
@@ -300,10 +346,16 @@ def handle_input():
             appointment_id = reminder_context.get("appointment_id")
             appointment_time = reminder_context.get("appointment_time")
             
+            # Update conversation state
+            conversation_state["intent"] = "confirmation_complete"
+            
             # In a real system, you might mark the appointment as confirmed in the database
             
             message = f"Perfect, {name}. Your appointment for {appointment_time} is confirmed. We look forward to seeing you. Is there anything else I can help you with today?"
             response.say(message, voice="alice")
+            
+            # Follow-up is already included in the message
+            need_follow_up = False
         
         elif "CONVERSATION_ENDED" in llm_response:
             # End the conversation
@@ -318,8 +370,34 @@ def handle_input():
             return str(response)
         
         else:
+            # Regular response - check if we're in the booking flow
+            if conversation_state.get("intent") == "booking":
+                # Parse response to detect what stage we're in
+                name_indicators = ["what is your name", "may I have your name", "could I get your name"]
+                time_indicators = ["what time", "which day", "when would", "prefer to come"]
+                notes_indicators = ["any notes", "special requests", "anything else we should know"]
+                
+                # Check current booking stage
+                if any(indicator.lower() in llm_response.lower() for indicator in name_indicators):
+                    conversation_state["booking_stage"] = "need_name"
+                    print("Detected booking stage: need_name")
+                elif any(indicator.lower() in llm_response.lower() for indicator in time_indicators):
+                    conversation_state["booking_stage"] = "need_time"
+                    print("Detected booking stage: need_time")
+                elif any(indicator.lower() in llm_response.lower() for indicator in notes_indicators):
+                    conversation_state["booking_stage"] = "need_notes"
+                    print("Detected booking stage: need_notes")
+                
+                # For booking flow, don't add a follow-up until all info is collected
+                if conversation_state.get("booking_stage") != "complete":
+                    need_follow_up = False
+            
             # Regular response
             response.say(llm_response, voice="alice")
+        
+        # Update conversation state in the queue
+        conversation_queues[call_sid].put(conversation_state)
+        print(f"Updated conversation state: {conversation_state}")
         
         # Gather next user input
         gather = Gather(
@@ -329,7 +407,10 @@ def handle_input():
             timeout=5,
             speechTimeout="auto"
         )
-        gather.say("Is there anything else I can help you with?", voice="alice")
+        
+        # Only add follow-up question if needed
+        if need_follow_up and conversation_state.get("booking_stage") == "complete":
+            gather.say("Is there anything else I can help you with?", voice="alice")
         response.append(gather)
         
         # If user doesn't say anything, wrap up the call gracefully
@@ -556,4 +637,4 @@ if __name__ == "__main__":
     print("Then configure your Twilio phone number to use the following webhooks:")
     print("  Voice: http://your-domain.com/voice")
     print("  SMS: http://your-domain.com/sms")
-    app.run(debug=True, port=5000) 
+    app.run(debug=True, port=5002) 
