@@ -86,18 +86,22 @@ def voice_webhook():
                 
                 # Extract appointment details
                 client_name = context_data.get('client_name', 'client')
+                first_name = client_name.split()[0] if client_name else 'client'
                 appointment_time = context_data.get('appointment_time', 'your upcoming appointment')
+                notes = context_data.get('notes', '')
+                appointment_id = context_data.get('appointment_id', '')
                 reminder_type = context_data.get('reminder_type', 'general')
                 
                 print(f"Reminder details: name={client_name}, time={appointment_time}, type={reminder_type}")
                 
                 # Construct a personalized prompt based on reminder type
                 if reminder_type == "hours_36_before":
-                    prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment scheduled in 36 hours at {appointment_time}. Would you like to confirm this appointment, or would you prefer to reschedule or cancel it?"
+                    prompt = f"OUTBOUND_REMINDER_CALL: Hi {first_name}, this is a friendly reminder about your appointment scheduled for {appointment_time}. I'm calling to confirm that this time still works for you?"
                 elif reminder_type == "thirty_min_before":
-                    prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling to remind you that you have an appointment coming up in about 30 minutes at {appointment_time}. Are you still able to make it to your appointment today?"
+                    prompt = f"OUTBOUND_REMINDER_CALL: Hi {first_name}, your appointment is coming up in about 30 minutes at {appointment_time}. I'm just calling to make sure you're on your way or if you need any assistance?"
                 else:
-                    prompt = f"OUTBOUND_REMINDER_CALL: Hi {client_name}, I'm calling about your appointment scheduled for {appointment_time}. I wanted to confirm if you're still planning to attend this appointment?"
+                    notes_mention = f" Your notes mention: {notes}." if notes else ""
+                    prompt = f"OUTBOUND_REMINDER_CALL: Hello {first_name}, I'm calling about your appointment scheduled for {appointment_time}.{notes_mention} I wanted to confirm if this appointment time still works for you, or if you'd prefer to reschedule or cancel?"
                 
                 # Process the prompt with language model
                 print(f"Sending prompt to LLM: {prompt}")

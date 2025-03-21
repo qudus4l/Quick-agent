@@ -229,7 +229,11 @@ def call_test_client():
             }), 400
             
         # Create a TwiML response for when the call is answered
-        callback_url = f"{os.getenv('PUBLIC_URL', '')}/voice"
+        server_base_url = os.getenv('SERVER_BASE_URL', '')
+        if not server_base_url:
+            server_base_url = os.getenv('PUBLIC_URL', '')
+        
+        callback_url = f"{server_base_url}/voice"
         
         try:
             # Initiate the call using Twilio

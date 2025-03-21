@@ -181,6 +181,7 @@ def make_reminder_call(appointment_id, reminder_type):
         # Extract appointment details
         client_name = appointment.get('name', 'valued client')
         appointment_time = appointment.get('appointment_time', 'your upcoming appointment')
+        notes = appointment.get('notes', '')
         
         # Get client phone number, or use test number if none is available
         client_phone = appointment.get('phone_number')
@@ -194,6 +195,7 @@ def make_reminder_call(appointment_id, reminder_type):
             "appointment_id": appointment_id,
             "client_name": client_name,
             "appointment_time": appointment_time,
+            "notes": notes,
             "reminder_type": reminder_type,
         }
         
