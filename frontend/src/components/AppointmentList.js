@@ -66,8 +66,7 @@ function AppointmentList() {
     try {
       const response = await apiService.triggerAppointmentCall(appointmentId);
       if (response.success) {
-        // Refresh the appointments list to see any updates
-        fetchAppointments();
+        // Show success message or update UI
       } else {
         setError(`Failed to initiate call: ${response.message}`);
       }

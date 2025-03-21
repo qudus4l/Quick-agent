@@ -485,17 +485,13 @@ class ConversationManager:
                         "notes": notes
                     }
                     
-                    # Get a phone number (you might want to implement a way to collect this from the user)
-                    phone_number = "Unknown"  # Default value
-                    
-                    # Save appointment to database with phone number
-                    appointment_id = self.db.save_appointment(name, time, notes, phone_number)
+                    # Save appointment to database
+                    appointment_id = self.db.save_appointment(name, time, notes)
                     
                     print("\nAppointment Details:")
                     print(f"Name: {name}")
                     print(f"Time: {time}")
                     print(f"Notes: {notes}")
-                    print(f"Phone: {phone_number}")
                     print(f"Appointment ID: {appointment_id}")
                     print(f"Saved to database: {self.db.db_path}")
                     

@@ -214,15 +214,8 @@ def make_reminder_call(appointment_id, reminder_type):
             print("For production, set SERVER_BASE_URL to your public-facing URL (e.g., ngrok URL)")
             
         # Generate callback URL with context
-        # Make sure URL doesn't have double slashes 
-        if server_base_url.endswith('/'):
-            callback_url = f"{server_base_url}voice?reminder_context={context_encoded}"
-        else:
-            callback_url = f"{server_base_url}/voice?reminder_context={context_encoded}"
-            
+        callback_url = f"{server_base_url}/voice?reminder_context={context_encoded}"
         print(f"Using callback URL: {callback_url}")
-        print(f"Server base URL: {server_base_url}")
-        print(f"Context encoded: {context_encoded[:30]}... (truncated)")
         
         # Make the call using Twilio
         try:
@@ -241,7 +234,6 @@ def make_reminder_call(appointment_id, reminder_type):
                 return False
                 
             # Make the call
-            print(f"Making call to {client_phone} from {twilio_phone}")
             call = twilio_client.calls.create(
                 to=client_phone,
                 from_=twilio_phone,

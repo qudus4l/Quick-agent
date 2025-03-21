@@ -64,8 +64,6 @@ def voice_webhook():
         call_id = request.values.get('CallSid', '')
     
         print(f"Received call from {caller}, call ID: {call_id}")
-        print(f"Request args: {request.args}")
-        print(f"Request form values: {request.values}")
         
         # Check if this is a reminder call by detecting reminder_context parameter
         reminder_context = request.args.get('reminder_context', None)
