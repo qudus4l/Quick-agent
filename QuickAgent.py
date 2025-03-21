@@ -135,6 +135,31 @@ class AppointmentDatabase:
         conn.close()
         return appointments
 
+    def get_appointments_by_status(self, status=None):
+        """Retrieve appointments by status."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Check if status column exists
+        cursor.execute("PRAGMA table_info(appointments)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if "status" not in columns:
+            # Add status column if it doesn't exist
+            cursor.execute("ALTER TABLE appointments ADD COLUMN status TEXT")
+            conn.commit()
+        
+        if status:
+            cursor.execute("SELECT * FROM appointments WHERE status = ? ORDER BY created_at DESC", (status,))
+        else:
+            cursor.execute("SELECT * FROM appointments ORDER BY created_at DESC")
+            
+        appointments = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        return appointments
+
 class BusinessDataManager:
     def __init__(self):
         self.faqs = {
@@ -224,10 +249,11 @@ class LanguageModelProcessor:
         When processing outbound reminder calls (when message starts with "OUTBOUND_REMINDER_CALL:"):
         1. Be aware that you initiated this call to remind them about an upcoming appointment
         2. Listen to their response about keeping, rescheduling, or cancelling the appointment
-        3. If they want to CANCEL the appointment, respond with "CANCEL_APPOINTMENT: [Name]"
-        4. If they want to RESCHEDULE, collect the new preferred time and respond with "RESCHEDULE_APPOINTMENT: [Name]|[New Time]"
-        5. If they CONFIRM the appointment, thank them and respond with "APPOINTMENT_CONFIRMED: [Name]"
+        3. If they want to CANCEL the appointment, you MUST respond with "CANCEL_APPOINTMENT: [Name]"
+        4. If they want to RESCHEDULE, collect the new preferred time and you MUST respond with "RESCHEDULE_APPOINTMENT: [Name]|[New Time]"
+        5. If they CONFIRM the appointment, thank them and you MUST respond with "APPOINTMENT_CONFIRMED: [Name]"
         6. Be helpful and understanding regardless of their choice
+        7. These special command responses are CRUCIAL for our system to function correctly
         
         When the conversation is complete and all necessary information is gathered for a new appointment, respond with:
         "APPOINTMENT_BOOKED: [Full Name]|[Appointment Time]|[Notes]"
@@ -521,6 +547,8 @@ def list_appointments(filter_type=None, filter_value=None):
         appointments = db.get_appointments_by_name(filter_value)
     elif filter_type == "date":
         appointments = db.get_appointments_by_date(filter_value)
+    elif filter_type == "status":
+        appointments = db.get_appointments_by_status(filter_value)
     else:
         appointments = db.get_all_appointments()
     
@@ -535,6 +563,8 @@ def list_appointments(filter_type=None, filter_value=None):
         print(f"Time: {appt['appointment_time']}")
         print(f"Notes: {appt['notes']}")
         print(f"Created: {appt['created_at']}")
+        status = appt.get('status', 'pending')
+        print(f"Status: {status}")
         print("-" * 40)
 
 if __name__ == "__main__":

@@ -61,6 +61,7 @@ def get_appointments():
         name = request.args.get('name')
         date = request.args.get('date')
         appointment_id = request.args.get('id')
+        status = request.args.get('status')
         
         if appointment_id:
             appointment = appointment_db.get_appointment_by_id(int(appointment_id))
@@ -77,6 +78,8 @@ def get_appointments():
             appointments = appointment_db.get_appointments_by_name(name)
         elif date:
             appointments = appointment_db.get_appointments_by_date(date)
+        elif status:
+            appointments = appointment_db.get_appointments_by_status(status)
         else:
             appointments = appointment_db.get_all_appointments()
         
@@ -86,6 +89,10 @@ def get_appointments():
             if appointment_datetime:
                 appointment['datetime'] = appointment_datetime.isoformat()
                 appointment['days_until'] = days_until
+            
+            # Set default status if not present
+            if 'status' not in appointment:
+                appointment['status'] = 'pending'
         
         return jsonify(appointments)
     except Exception as e:

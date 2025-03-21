@@ -315,8 +315,26 @@ def handle_input():
             # Update conversation state
             conversation_state["intent"] = "cancellation_complete"
             
-            # In a real system, you would implement actual cancellation logic here
-            # For now, we'll just acknowledge the cancellation
+            # Actually cancel the appointment in the database
+            try:
+                conn = sqlite3.connect(appointment_db.db_path)
+                cursor = conn.cursor()
+                # Add a status column if it doesn't exist
+                cursor.execute("PRAGMA table_info(appointments)")
+                columns = [col[1] for col in cursor.fetchall()]
+                if "status" not in columns:
+                    cursor.execute("ALTER TABLE appointments ADD COLUMN status TEXT")
+                
+                # Update the appointment status
+                cursor.execute("UPDATE appointments SET status = ? WHERE id = ?", 
+                              ("cancelled", int(appointment_id)))
+                conn.commit()
+                conn.close()
+                print(f"Appointment {appointment_id} marked as cancelled in the database")
+            except Exception as e:
+                print(f"Error updating appointment status: {e}")
+                import traceback
+                traceback.print_exc()
             
             message = f"I understand you'd like to cancel your appointment, {name}. I've noted your cancellation. Is there anything else I can help you with today?"
             response.say(message, voice="alice")
@@ -335,8 +353,26 @@ def handle_input():
             # Update conversation state
             conversation_state["intent"] = "reschedule_complete"
             
-            # In a real system, you would implement actual rescheduling logic here
-            # For now, we'll just acknowledge the reschedule request
+            # Actually update the appointment in the database
+            try:
+                conn = sqlite3.connect(appointment_db.db_path)
+                cursor = conn.cursor()
+                # Check if status column exists, add if not
+                cursor.execute("PRAGMA table_info(appointments)")
+                columns = [col[1] for col in cursor.fetchall()]
+                if "status" not in columns:
+                    cursor.execute("ALTER TABLE appointments ADD COLUMN status TEXT")
+                
+                # Update the appointment time and status
+                cursor.execute("UPDATE appointments SET appointment_time = ?, status = ? WHERE id = ?", 
+                              (new_time, "rescheduled", int(appointment_id)))
+                conn.commit()
+                conn.close()
+                print(f"Appointment {appointment_id} rescheduled to {new_time} in the database")
+            except Exception as e:
+                print(f"Error updating appointment: {e}")
+                import traceback
+                traceback.print_exc()
             
             message = f"Thank you {name}. I've rescheduled your appointment for {new_time}. We look forward to seeing you then. Is there anything else I can help you with?"
             response.say(message, voice="alice")
@@ -353,7 +389,26 @@ def handle_input():
             # Update conversation state
             conversation_state["intent"] = "confirmation_complete"
             
-            # In a real system, you might mark the appointment as confirmed in the database
+            # Actually mark the appointment as confirmed in the database
+            try:
+                conn = sqlite3.connect(appointment_db.db_path)
+                cursor = conn.cursor()
+                # Check if status column exists, add if not
+                cursor.execute("PRAGMA table_info(appointments)")
+                columns = [col[1] for col in cursor.fetchall()]
+                if "status" not in columns:
+                    cursor.execute("ALTER TABLE appointments ADD COLUMN status TEXT")
+                
+                # Update the appointment status
+                cursor.execute("UPDATE appointments SET status = ? WHERE id = ?", 
+                              ("confirmed", int(appointment_id)))
+                conn.commit()
+                conn.close()
+                print(f"Appointment {appointment_id} marked as confirmed in the database")
+            except Exception as e:
+                print(f"Error updating appointment status: {e}")
+                import traceback
+                traceback.print_exc()
             
             message = f"Perfect, {name}. Your appointment for {appointment_time} is confirmed. We look forward to seeing you. Is there anything else I can help you with today?"
             response.say(message, voice="alice")
