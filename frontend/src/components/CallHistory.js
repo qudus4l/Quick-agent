@@ -113,6 +113,7 @@ function CallHistory() {
             <TableHead>
               <TableRow>
                 <TableCell>Direction</TableCell>
+                <TableCell>Contact</TableCell>
                 <TableCell>Phone Number</TableCell>
                 <TableCell>Date/Time</TableCell>
                 <TableCell>Status</TableCell>
@@ -138,7 +139,10 @@ function CallHistory() {
                     </Box>
                   </TableCell>
                   <TableCell>
-                    {call.direction === 'inbound' ? call.from : call.to}
+                    {call.display_name || (call.direction === 'inbound' ? 'Unknown Caller' : 'Unknown Recipient')}
+                  </TableCell>
+                  <TableCell>
+                    {call.display_number || (call.direction === 'inbound' ? call.from : call.to)}
                   </TableCell>
                   <TableCell>
                     {call.date_created ? format(parseISO(call.date_created), 'MMM d, yyyy h:mm a') : 'Unknown'}

@@ -247,13 +247,14 @@ class LanguageModelProcessor:
         - Respond with "CHECK_APPOINTMENTS: [Name]" where [Name] is the name they provided
         
         When processing outbound reminder calls (when message starts with "OUTBOUND_REMINDER_CALL:"):
-        1. Be aware that you initiated this call to remind them about an upcoming appointment
-        2. Listen to their response about keeping, rescheduling, or cancelling the appointment
-        3. If they want to CANCEL the appointment, you MUST respond with "CANCEL_APPOINTMENT: [Name]"
-        4. If they want to RESCHEDULE, collect the new preferred time and you MUST respond with "RESCHEDULE_APPOINTMENT: [Name]|[New Time]"
-        5. If they CONFIRM the appointment, thank them and you MUST respond with "APPOINTMENT_CONFIRMED: [Name]"
+        1. IMPORTANT: You initiated this call to remind them about an upcoming appointment, you are not responding to an inbound call
+        2. Listen carefully to their response about keeping, rescheduling, or cancelling the appointment
+        3. If they indicate they want to CANCEL the appointment, you MUST respond with "CANCEL_APPOINTMENT: [Name]"
+        4. If they indicate they want to RESCHEDULE, collect the new preferred time and you MUST respond with "RESCHEDULE_APPOINTMENT: [Name]|[New Time]"
+        5. If they confirm they will attend the appointment, thank them and you MUST respond with "APPOINTMENT_CONFIRMED: [Name]"
         6. Be helpful and understanding regardless of their choice
         7. These special command responses are CRUCIAL for our system to function correctly
+        8. Remember: for outbound calls, you are REMINDING them of an existing appointment, not taking a new booking
         
         When the conversation is complete and all necessary information is gathered for a new appointment, respond with:
         "APPOINTMENT_BOOKED: [Full Name]|[Appointment Time]|[Notes]"

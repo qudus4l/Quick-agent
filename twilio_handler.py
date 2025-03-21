@@ -80,7 +80,7 @@ def voice_webhook():
         if reminder_context:
             try:
                 # Decode base64 context
-                print(f"Processing reminder call with context: {reminder_context}")
+                print(f"Processing OUTBOUND REMINDER call with context: {reminder_context}")
                 decoded_context = base64.urlsafe_b64decode(reminder_context.encode()).decode()
                 context_data = json.loads(decoded_context)
                 
@@ -92,7 +92,7 @@ def voice_webhook():
                 appointment_id = context_data.get('appointment_id', '')
                 reminder_type = context_data.get('reminder_type', 'general')
                 
-                print(f"Reminder details: name={client_name}, time={appointment_time}, type={reminder_type}")
+                print(f"REMINDER CALL details: name={client_name}, time={appointment_time}, type={reminder_type}")
                 
                 # Construct a personalized prompt based on reminder type
                 if reminder_type == "hours_36_before":
@@ -101,12 +101,12 @@ def voice_webhook():
                     prompt = f"OUTBOUND_REMINDER_CALL: Hi {first_name}, your appointment is coming up in about 30 minutes at {appointment_time}. I'm just calling to make sure you're on your way or if you need any assistance?"
                 else:
                     notes_mention = f" Your notes mention: {notes}." if notes else ""
-                    prompt = f"OUTBOUND_REMINDER_CALL: Hello {first_name}, I'm calling about your appointment scheduled for {appointment_time}.{notes_mention} I wanted to confirm if this appointment time still works for you, or if you'd prefer to reschedule or cancel?"
+                    prompt = f"OUTBOUND_REMINDER_CALL: Hello {first_name}, this is a reminder call about your appointment scheduled for {appointment_time}.{notes_mention} I'm calling to confirm if you're still planning to attend, or if you need to reschedule or cancel?"
                 
                 # Process the prompt with language model
-                print(f"Sending prompt to LLM: {prompt}")
+                print(f"Sending REMINDER prompt to LLM: {prompt}")
                 assistant_response = llm_processor.process(prompt)
-                print(f"LLM response: {assistant_response}")
+                print(f"LLM REMINDER response: {assistant_response}")
                 
                 # Gather user input
                 gather = Gather(
@@ -185,10 +185,10 @@ def handle_input():
         
         if reminder_context_encoded:
             try:
-                print(f"Processing with reminder context: {reminder_context_encoded}")
+                print(f"Processing with REMINDER context: {reminder_context_encoded}")
                 decoded_bytes = base64.urlsafe_b64decode(reminder_context_encoded)
                 reminder_context = json.loads(decoded_bytes.decode())
-                print(f"Decoded reminder context: {reminder_context}")
+                print(f"Decoded REMINDER context: {reminder_context}")
             except Exception as e:
                 print(f"Error decoding reminder context: {e}")
                 import traceback
@@ -237,10 +237,23 @@ def handle_input():
             conversation_state["booking_stage"] = "need_name"
             print(f"Detected booking intent from user input: {user_input}")
         
-        # Process the user input with our language model
-        print(f"Sending user input to LLM: {user_input}")
-        llm_response = llm_processor.process(user_input)
-        print(f"LLM response: {llm_response}")
+        # Send the user's input to the language model
+        if reminder_context:
+            first_name = reminder_context.get('client_name', 'client').split()[0]
+            appointment_time = reminder_context.get('appointment_time', 'your appointment')
+            # Make it clear this is an outbound reminder call in the prompt
+            llm_prompt = f"OUTBOUND_REMINDER_CALL: The user {first_name} responded to our reminder about their appointment at {appointment_time} with: {user_input}"
+            print(f"Sending REMINDER response to LLM: {llm_prompt}")
+        else:
+            llm_prompt = user_input
+            print(f"Sending user input to LLM: {llm_prompt}")
+        
+        start_time = time.time()
+        llm_response = llm_processor.process(llm_prompt)
+        end_time = time.time()
+        
+        elapsed_time = int((end_time - start_time) * 1000)
+        print(f"LLM ({elapsed_time}ms): {llm_response}")
         
         # Track if we need to add a follow-up question
         need_follow_up = True

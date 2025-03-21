@@ -19,6 +19,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from twilio.rest import Client
 import threading
+import base64
+import sqlite3
 
 # Import from QuickAgent
 from QuickAgent import AppointmentDatabase
@@ -121,11 +123,15 @@ def get_recent_calls():
         # Get recent calls from Twilio
         calls = twilio_client.calls.list(limit=20)
         
+        # Get our own twilio number for comparison
+        our_twilio_number = os.getenv("TWILIO_PHONE_NUMBER", "unknown")
+        
         # Format the calls data
         calls_data = []
         for call in calls:
             # Handle if the call object is not iterable or accessible
             try:
+                # Get base call data
                 call_data = {
                     'sid': getattr(call, 'sid', 'unknown'),
                     'to': getattr(call, 'to', 'unknown'),
@@ -135,6 +141,45 @@ def get_recent_calls():
                     'duration': getattr(call, 'duration', 0),
                     'date_created': getattr(call, 'date_created', datetime.now()).isoformat() if hasattr(call, 'date_created') else datetime.now().isoformat()
                 }
+                
+                # Add enhanced display data
+                if call_data['direction'] == 'inbound':
+                    call_data['display_number'] = call_data['from']
+                    call_data['display_name'] = 'Unknown Caller'
+                    call_data['display_type'] = 'Incoming'
+                    
+                    # Try to find the caller name from appointments
+                    try:
+                        conn = sqlite3.connect(appointment_db.db_path)
+                        conn.row_factory = sqlite3.Row
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT name FROM appointments WHERE phone_number = ? LIMIT 1", (call_data['from'],))
+                        result = cursor.fetchone()
+                        conn.close()
+                        
+                        if result:
+                            call_data['display_name'] = result['name']
+                    except Exception as db_err:
+                        print(f"Error looking up caller name: {db_err}")
+                else:
+                    call_data['display_number'] = call_data['to']
+                    call_data['display_name'] = 'Unknown Recipient'
+                    call_data['display_type'] = 'Outgoing'
+                    
+                    # Try to find the recipient name from appointments
+                    try:
+                        conn = sqlite3.connect(appointment_db.db_path)
+                        conn.row_factory = sqlite3.Row
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT name FROM appointments WHERE phone_number = ? LIMIT 1", (call_data['to'],))
+                        result = cursor.fetchone()
+                        conn.close()
+                        
+                        if result:
+                            call_data['display_name'] = result['name']
+                    except Exception as db_err:
+                        print(f"Error looking up recipient name: {db_err}")
+                
                 calls_data.append(call_data)
             except Exception as e:
                 print(f"Error processing call data: {e}")
@@ -158,6 +203,7 @@ def get_dashboard_data():
             recent_calls = []
             for call in calls:
                 try:
+                    # Get base call data
                     call_data = {
                         'sid': getattr(call, 'sid', 'unknown'),
                         'to': getattr(call, 'to', 'unknown'),
@@ -167,6 +213,45 @@ def get_dashboard_data():
                         'duration': getattr(call, 'duration', 0),
                         'date_created': getattr(call, 'date_created', datetime.now()).isoformat() if hasattr(call, 'date_created') else datetime.now().isoformat()
                     }
+                    
+                    # Add enhanced display data
+                    if call_data['direction'] == 'inbound':
+                        call_data['display_number'] = call_data['from']
+                        call_data['display_name'] = 'Unknown Caller'
+                        call_data['display_type'] = 'Incoming'
+                        
+                        # Try to find the caller name from appointments
+                        try:
+                            conn = sqlite3.connect(appointment_db.db_path)
+                            conn.row_factory = sqlite3.Row
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT name FROM appointments WHERE phone_number = ? LIMIT 1", (call_data['from'],))
+                            result = cursor.fetchone()
+                            conn.close()
+                            
+                            if result:
+                                call_data['display_name'] = result['name']
+                        except Exception as db_err:
+                            print(f"Error looking up caller name: {db_err}")
+                    else:
+                        call_data['display_number'] = call_data['to']
+                        call_data['display_name'] = 'Unknown Recipient'
+                        call_data['display_type'] = 'Outgoing'
+                        
+                        # Try to find the recipient name from appointments
+                        try:
+                            conn = sqlite3.connect(appointment_db.db_path)
+                            conn.row_factory = sqlite3.Row
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT name FROM appointments WHERE phone_number = ? LIMIT 1", (call_data['to'],))
+                            result = cursor.fetchone()
+                            conn.close()
+                            
+                            if result:
+                                call_data['display_name'] = result['name']
+                        except Exception as db_err:
+                            print(f"Error looking up recipient name: {db_err}")
+                    
                     recent_calls.append(call_data)
                 except Exception as call_err:
                     print(f"Error processing call data: {call_err}")
@@ -235,12 +320,44 @@ def call_test_client():
                 "message": "Missing phone numbers in environment variables"
             }), 400
             
+        # Get the most recent appointment
+        most_recent = appointment_db.get_all_appointments()
+        
+        if not most_recent:
+            return jsonify({
+                "success": False,
+                "message": "No appointments found in the database"
+            }), 400
+            
+        # Use the first (most recent) appointment
+        appointment = most_recent[0]
+        appointment_id = appointment['id']
+        client_name = appointment['name']
+        appointment_time = appointment['appointment_time']
+        notes = appointment.get('notes', '')
+        
+        # Create a context object for the conversational assistant
+        context = {
+            "is_reminder_call": True,
+            "appointment_id": appointment_id,
+            "client_name": client_name,
+            "appointment_time": appointment_time,
+            "notes": notes,
+            "reminder_type": "general"
+        }
+        
+        # Encode the context as a URL-safe base64 string
+        context_json = json.dumps(context)
+        context_encoded = base64.urlsafe_b64encode(context_json.encode()).decode()
+        
         # Create a TwiML response for when the call is answered
         server_base_url = os.getenv('SERVER_BASE_URL', '')
         if not server_base_url:
             server_base_url = os.getenv('PUBLIC_URL', '')
         
-        callback_url = f"{server_base_url}/voice"
+        callback_url = f"{server_base_url}/voice?reminder_context={context_encoded}"
+        print(f"Using callback URL for reminder: {callback_url}")
+        print(f"Appointment details: {appointment}")
         
         try:
             # Initiate the call using Twilio
@@ -253,8 +370,9 @@ def call_test_client():
             
             return jsonify({
                 "success": True,
-                "message": "Call initiated to test client",
-                "call_sid": call.sid
+                "message": f"Reminder call initiated to {client_name} for appointment on {appointment_time}",
+                "call_sid": call.sid,
+                "appointment_id": appointment_id
             })
         except Exception as call_err:
             print(f"Error initiating call: {call_err}")

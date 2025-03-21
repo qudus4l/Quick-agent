@@ -248,13 +248,16 @@ function Dashboard() {
                             ) : (
                               <CallMadeIcon sx={{ mr: 1, color: 'secondary.main' }} />
                             )}
-                            {call.from}
+                            {call.display_name || (call.direction === 'inbound' ? 'Unknown Caller' : 'Unknown Recipient')}
                           </Box>
                         }
                         secondary={
                           <>
+                            <Typography component="span" variant="body2">
+                              {call.display_number || (call.direction === 'inbound' ? call.from : call.to)}
+                            </Typography>
                             {call.date_created && (
-                              <Typography component="span" variant="body2">
+                              <Typography component="div" variant="body2" sx={{ mt: 0.5 }}>
                                 {format(parseISO(call.date_created), 'MMM d, yyyy h:mm a')}
                               </Typography>
                             )}
